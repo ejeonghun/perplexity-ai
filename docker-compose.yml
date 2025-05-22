@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  perplexity-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: perplexity-api
+    restart: unless-stopped
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./:/app
+      # Ubuntu Firefox 쿠키 파일 볼륨 매핑
+      - ${HOME}/snap/firefox:/root/.mozilla/firefox:ro
+    environment:
+      - TZ=Asia/Seoul
+      # Firefox 프로필 디렉토리 환경 변수 설정
+      - FIREFOX_PROFILE_DIR=/root/.mozilla/firefox
+    command: uvicorn main:app --host 0.0.0.0 --port 8007 --reload
