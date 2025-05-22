@@ -71,21 +71,50 @@ async def chat_endpoint(request: ChatRequest):
     global global_client
     
     try:
+        logger.info(f"chat 요청 받음: 쿼리='${request.query}'")
+        
         # 요청에 쿠키가 제공된 경우 해당 쿠키로 임시 클라이언트 사용
         if request.cookies:
             logger.info("요청에서 제공된 쿠키로 임시 클라이언트 생성")
             temp_client = await Client(cookies=request.cookies)
-            response = await temp_client.search(query=request.query)
+            logger.info("검색 시작...")
+            try:
+                # 타임아웃 30초 설정
+                response = await asyncio.wait_for(
+                    temp_client.search(query=request.query),
+                    timeout=30.0
+                )
+                logger.info("검색 완료, 응답 반환")
+            except asyncio.TimeoutError:
+                logger.error("검색 타임아웃 발생")
+                raise HTTPException(status_code=504, detail="Perplexity API 타임아웃")
         # 그렇지 않으면 전역 클라이언트 사용
         else:
             # 전역 클라이언트가 없으면 초기화
             if global_client is None:
+                logger.info("전역 클라이언트 초기화 필요")
                 success = await initialize_client()
                 if not success:
+                    logger.error("클라이언트 초기화 실패")
                     raise HTTPException(status_code=500, detail="Perplexity 클라이언트 초기화에 실패했습니다.")
             
             logger.info("전역 Perplexity 클라이언트로 검색 수행")
-            response = await global_client.search(query=request.query)
+            try:
+                # 타임아웃 30초 설정
+                response = await asyncio.wait_for(
+                    global_client.search(query=request.query),
+                    timeout=30.0
+                )
+                logger.info("검색 완료, 응답 반환")
+            except asyncio.TimeoutError:
+                logger.error("검색 타임아웃 발생")
+                raise HTTPException(status_code=504, detail="Perplexity API 타임아웃")
+        
+        logger.info(f"응답 타입: {type(response)}")
+        if response:
+            logger.info("응답 데이터가 존재함")
+        else:
+            logger.warning("응답 데이터가 없음 (None)")
         
         return response
     except Exception as e:
