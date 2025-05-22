@@ -4,13 +4,12 @@ from typing import Dict, Optional
 from perplexity_async.client import Client
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from cookie import get_perplexity_cookies
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-app = FastAPI()
 
 # 전역 Client 변수
 global_client = None
@@ -42,6 +41,23 @@ async def initialize_client():
         except Exception as e:
             logger.error(f"빈 쿠키로 Perplexity 클라이언트 초기화 실패: {e}")
             return False
+
+# lifespan 컨텍스트 매니저 구현
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 서버 시작 시 실행되는 코드
+    logger.info("서버 시작: 클라이언트 초기화 중...")
+    await initialize_client()
+    
+    # 다음 코드는 라우트 처리를 위해 FastAPI에 제어권을 넘김
+    yield
+    
+    # 서버 종료 시 실행되는 코드
+    logger.info("서버 종료: 필요한 정리 작업 수행 중...")
+    # 여기에 필요한 정리 코드 추가
+
+# lifespan 컨텍스트 매니저 등록
+app = FastAPI(lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     query: str = Field(..., description="The search query for Perplexity.")
@@ -102,8 +118,3 @@ async def refresh_client():
         return {"status": "success", "message": "클라이언트가 성공적으로 갱신되었습니다."}
     else:
         raise HTTPException(status_code=500, detail="클라이언트 갱신에 실패했습니다.")
-
-@app.on_event("startup")
-async def startup_event():
-    """서버 시작 시 클라이언트 초기화"""
-    await initialize_client()
