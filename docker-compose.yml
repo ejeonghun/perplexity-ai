@@ -8,7 +8,7 @@ services:
     container_name: perplexity-api
     restart: unless-stopped
     ports:
-      - "8007:8007"
+      - "8000:8007"  # 호스트의 8000번 포트를 컨테이너의 8007번 포트에 매핑
     volumes:
       - ./:/app
       # Ubuntu Firefox 쿠키 파일 볼륨 매핑
@@ -18,3 +18,11 @@ services:
       # Firefox 프로필 디렉토리 환경 변수 설정
       - FIREFOX_PROFILE_DIR=/root/.mozilla/firefox
     command: uvicorn main:app --host 0.0.0.0 --port 8007 --reload
+    # 명시적인 네트워크 설정 추가
+    networks:
+      - perplexity-network
+
+# 커스텀 네트워크 정의
+networks:
+  perplexity-network:
+    driver: bridge

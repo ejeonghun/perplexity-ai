@@ -1,3 +1,5 @@
 curl_cffi
 fastapi
 uvicorn[standard]
+websockets
+websocket-client
