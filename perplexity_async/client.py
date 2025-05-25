@@ -198,34 +198,106 @@ class Client(AsyncMixin):
                 }
             }
         
-        resp = await self.session.post('https://www.perplexity.ai/rest/sse/perplexity_ask', json=json_data, stream=True)
-        chunks = []
-        
-        async def stream_response(resp):
-            async for chunk in resp.aiter_lines(delimiter=b'\r\n\r\n'):
-                content = chunk.decode('utf-8')
-                
-                if content.startswith('event: message\r\n'):
-                    content_json = json.loads(content[len('event: message\r\ndata: '):])
-                    content_json['text'] = json.loads(content_json['text'])
-                    
-                    chunks.append(content_json)
-                    yield chunks[-1]
-                
-                elif content.startswith('event: end_of_stream\r\n'):
-                    return
-        
-        if stream:
-            return stream_response(resp)
-        
-        async for chunk in resp.aiter_lines(delimiter=b'\r\n\r\n'):
-            content = chunk.decode('utf-8')
+        try:
+            resp = await self.session.post('https://www.perplexity.ai/rest/sse/perplexity_ask', json=json_data, stream=True)
+            chunks = []
             
-            if content.startswith('event: message\r\n'):
-                content_json = json.loads(content[len('event: message\r\ndata: '):])
-                content_json['text'] = json.loads(content_json['text'])
-                
-                chunks.append(content_json)
+            if not resp.ok:
+                print(f"API 응답 오류: 상태 코드 {resp.status_code}")
+                # 기본 응답 객체 반환
+                return {
+                    "text": {"answer": "API 요청 중 오류가 발생했습니다."},
+                    "status": "error",
+                    "backend_uuid": str(uuid4()),
+                    "web_results": []
+                }
             
-            elif content.startswith('event: end_of_stream\r\n'):
-                return chunks[-1]
+            async def stream_response(resp):
+                try:
+                    async for chunk in resp.aiter_lines(delimiter=b'\r\n\r\n'):
+                        content = chunk.decode('utf-8')
+                        
+                        if content.startswith('event: message\r\n'):
+                            content_json = json.loads(content[len('event: message\r\ndata: '):])
+                            content_json['text'] = json.loads(content_json['text'])
+                            
+                            chunks.append(content_json)
+                            yield chunks[-1]
+                        
+                        elif content.startswith('event: end_of_stream\r\n'):
+                            return
+                except Exception as e:
+                    print(f"스트림 처리 중 오류 발생: {e}")
+                    # 오류 발생 시 기본 응답 객체 반환
+                    yield {
+                        "text": {"answer": "스트림 처리 중 오류가 발생했습니다."},
+                        "status": "error",
+                        "backend_uuid": str(uuid4()),
+                        "web_results": []
+                    }
+            
+            if stream:
+                return stream_response(resp)
+            
+            try:
+                timeout = False
+                # 타임아웃 설정 (10초)
+                async def read_with_timeout():
+                    nonlocal timeout
+                    try:
+                        async for chunk in resp.aiter_lines(delimiter=b'\r\n\r\n'):
+                            content = chunk.decode('utf-8')
+                            
+                            if content.startswith('event: message\r\n'):
+                                try:
+                                    content_json = json.loads(content[len('event: message\r\ndata: '):])
+                                    content_json['text'] = json.loads(content_json['text'])
+                                    chunks.append(content_json)
+                                except json.JSONDecodeError as e:
+                                    print(f"JSON 파싱 오류: {e}, content: {content}")
+                                    continue
+                            
+                            elif content.startswith('event: end_of_stream\r\n'):
+                                break
+                    except Exception as e:
+                        print(f"응답 읽기 중 오류: {e}")
+                        timeout = True
+                
+                # 10초 타임아웃으로 실행
+                try:
+                    await asyncio.wait_for(read_with_timeout(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    timeout = True
+                    print("응답 타임아웃 발생")
+                
+                # 청크가 있으면 마지막 청크 반환
+                if chunks:
+                    return chunks[-1]
+                
+                # 타임아웃이나 청크가 없는 경우 기본 응답 객체 반환
+                return {
+                    "text": {"answer": "타임아웃 또는 응답 없음" if timeout else "응답이 비어 있습니다"},
+                    "status": "error" if timeout else "empty",
+                    "backend_uuid": str(uuid4()),
+                    "web_results": []
+                }
+                
+            except Exception as e:
+                print(f"응답 처리 중 오류: {e}")
+                # 오류 발생 시 기본 응답 객체 반환
+                return {
+                    "text": {"answer": f"응답 처리 중 오류가 발생했습니다: {str(e)}"},
+                    "status": "error",
+                    "backend_uuid": str(uuid4()),
+                    "web_results": []
+                }
+                
+        except Exception as e:
+            print(f"요청 중 오류: {e}")
+            # 요청 중 오류 발생 시 기본 응답 객체 반환
+            return {
+                "text": {"answer": f"API 요청 중 오류가 발생했습니다: {str(e)}"},
+                "status": "error",
+                "backend_uuid": str(uuid4()),
+                "web_results": []
+            }
