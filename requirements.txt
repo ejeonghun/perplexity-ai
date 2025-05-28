@@ -3,3 +3,10 @@ fastapi
 uvicorn[standard]
 websockets
 websocket-client
+httpx
+pydantic
+python-multipart
+aiofiles
+python-mimetypes
+perplexity-api
+perplexity-api-async
